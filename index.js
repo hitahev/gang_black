@@ -1,3 +1,12 @@
+const fs = require('fs');
+
+// 起動時に credentials.json を復元する処理
+const credentialsB64 = process.env.GOOGLE_CREDENTIALS_B64;
+if (credentialsB64) {
+  const credentialsJson = Buffer.from(credentialsB64, 'base64').toString('utf-8');
+  fs.writeFileSync('./credentials.json', credentialsJson);
+}
+
 const { Client, GatewayIntentBits, ActionRowBuilder, ButtonBuilder, ButtonStyle, Events } = require('discord.js');
 const { google } = require('googleapis');
 const credentials = require('./credentials.json');
