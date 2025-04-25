@@ -1,8 +1,9 @@
 const fs = require('fs');
 const { Client, GatewayIntentBits, ActionRowBuilder, ButtonBuilder, ButtonStyle, Events } = require('discord.js');
 const { google } = require('googleapis');
+const axios = require('axios');
 
-// 起動時に credentials.json を復元する処理
+// === credentials.json を.envから復元 ===
 const credentialsB64 = process.env.GOOGLE_CREDENTIALS_B64;
 if (credentialsB64) {
   const credentialsJson = Buffer.from(credentialsB64, 'base64').toString('utf-8');
@@ -10,14 +11,13 @@ if (credentialsB64) {
 }
 
 const credentials = require('./credentials.json');
-const axios = require('axios');
 
 // === 各種設定 ===
-const SPREADSHEET_ID = '1HixtxBa4Zph88RZSY0ffh8XXB0sVlSCuDI8MWnq_6f8'; // シートID
+const SPREADSHEET_ID = '1HixtxBa4Zph88RZSY0ffh8XXB0sV1ScuDI8MWnq_6f8';
 const MASTER_SHEET = 'マスタ';
 const LOG_SHEET = 'ログ';
-const TARGET_CHANNEL_ID = '1365277821743927296'; // 起動時に送信するチャンネル
-const pendingUsers = new Map(); // ユーザーの一時保存用（項目 → 次の入力で使う）
+const TARGET_CHANNEL_ID = '1365277821743927296'; // ← 実際のIDに置き換えてね
+const pendingUsers = new Map();
 
 // === Google Sheets 認証 ===
 const auth = new google.auth.GoogleAuth({
@@ -36,9 +36,11 @@ const client = new Client({
   ],
 });
 
-// === 起動時：項目リストを読み込んでボタン表示 ===
+// === 起動時にボタン表示 ===
 client.once(Events.ClientReady, async () => {
-  console.log(`✅ Logged in as ${client.user.tag}`);
+  console.log(`🚀 Bot is ready!`);
+  console.log("📦 Channel ID:", TARGET_CHANNEL_ID);
+  console.log("📄 Loading items from Google Sheets...");
 
   const channel = await client.channels.fetch(TARGET_CHANNEL_ID);
   if (!channel) return console.error("❌ チャンネルが見つかりません");
@@ -49,9 +51,10 @@ client.once(Events.ClientReady, async () => {
       range: `${MASTER_SHEET}!A:A`,
     });
 
-    const items = res.data.values?.flat().filter(Boolean).slice(0, 5); // 先頭5個までに制限（必要に応じて調整）
+    const items = res.data.values?.flat().filter(Boolean);
+    console.log("✅ Items loaded:", items);
 
-    const buttons = items.map(item =>
+    const buttons = items.slice(0, 5).map(item =>
       new ButtonBuilder()
         .setCustomId(`item_${item}`)
         .setLabel(item)
@@ -80,8 +83,40 @@ client.on(Events.InteractionCreate, async interaction => {
 
   await interaction.reply({
     content: `**${item}** を選択しました。\n次に「数量 メモ（任意）」を入力してください。\n例：\`3 重要アイテム\``,
-    ephemeral: true, // 他の人には見えない
+    ephemeral: true,
   });
 });
 
-// === ユーザーが数量＋メモ
+// === ユーザーが数量＋メモを送信したら記録 ===
+client.on('messageCreate', async (message) => {
+  if (message.author.bot) return;
+
+  const pending = pendingUsers.get(message.author.id);
+  if (!pending) return;
+
+  const args = message.content.trim().split(/\s+/);
+  const quantity = args[0] || '';
+  const memo = args.slice(1).join(' ') || '';
+
+  const now = new Date();
+  const formattedDate = now.toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' });
+
+  try {
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `${LOG_SHEET}!A:E`,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: {
+        values: [[formattedDate, pending.name, pending.item, quantity, memo]],
+      },
+    });
+
+    await message.react('📘');
+    pendingUsers.delete(message.author.id);
+  } catch (err) {
+    console.error('❌ スプレッドシートへの書き込み失敗:', err);
+    await message.react('❌');
+  }
+});
+
+client.login(process.env.DISCORD_TOKEN);
