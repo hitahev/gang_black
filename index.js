@@ -1,4 +1,6 @@
 const fs = require('fs');
+const { Client, GatewayIntentBits, ActionRowBuilder, ButtonBuilder, ButtonStyle, Events } = require('discord.js');
+const { google } = require('googleapis');
 
 // 起動時に credentials.json を復元する処理
 const credentialsB64 = process.env.GOOGLE_CREDENTIALS_B64;
@@ -7,8 +9,6 @@ if (credentialsB64) {
   fs.writeFileSync('./credentials.json', credentialsJson);
 }
 
-const { Client, GatewayIntentBits, ActionRowBuilder, ButtonBuilder, ButtonStyle, Events } = require('discord.js');
-const { google } = require('googleapis');
 const credentials = require('./credentials.json');
 const axios = require('axios');
 
