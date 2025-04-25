@@ -22,7 +22,10 @@ client.on('messageCreate', async (message) => {
 
   const [item, quantity, ...memoParts] = args;
   const memo = memoParts.join(' ') || '';
+  
   const displayName = message.member?.nickname || message.author.username;
+  console.log("🔍 displayName:", displayName);
+  console.log("🧩 member:", message.member);
 
   const payload = {
     name: displayName,
