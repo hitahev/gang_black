@@ -5,7 +5,12 @@ const GAS_WEBHOOK_URL = 'https://script.google.com/macros/s/AKfycbyPFUqQRmsWENwp
 const ALLOWED_CHANNEL_ID = '1365277821743927296'; // ←反応させたいチャンネルのID
 
 const client = new Client({
-  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent,
+    GatewayIntentBits.GuildMembers // ← これで表示名（nickname）が取得できるようになる！
+  ],
 });
 
 client.on('messageCreate', async (message) => {
