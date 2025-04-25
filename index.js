@@ -26,12 +26,15 @@ client.on('messageCreate', async (message) => {
     memo,
   };
 
-  try {
-    await axios.post(GAS_WEBHOOK_URL, payload);
-    console.log('✅ GASに送信しました');
-  } catch (error) {
-    console.error('❌ 送信エラー:', error);
-  }
+try {
+  await axios.post(GAS_WEBHOOK_URL, payload);
+  console.log('✅ GASに送信しました');
+  await message.react('📘'); // ← 成功したらリアクションつける
+} catch (error) {
+  console.error('❌ 送信エラー:', error);
+  await message.react('❌'); // ← 失敗したら赤バツつける
+}
+
 });
 
 client.login(process.env.DISCORD_TOKEN);
