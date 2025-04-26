@@ -1,15 +1,14 @@
+// 必要なモジュール読み込み
 const fs = require('fs');
 const { Client, GatewayIntentBits, ActionRowBuilder, ButtonBuilder, ButtonStyle, Events } = require('discord.js');
 const { google } = require('googleapis');
-const axios = require('axios');
 
-// === credentials.json を.envから復元 ===
+// credentials.json を.envから復元
 const credentialsB64 = process.env.GOOGLE_CREDENTIALS_B64;
 if (credentialsB64) {
   const credentialsJson = Buffer.from(credentialsB64, 'base64').toString('utf-8');
   fs.writeFileSync('./credentials.json', credentialsJson);
 }
-
 const credentials = require('./credentials.json');
 
 // === 各種設定 ===
@@ -19,12 +18,14 @@ const LOG_SHEET = 'ログ';
 const TARGET_CHANNEL_ID = '1365277821743927296';
 const pendingUsers = new Map();
 
+// Google Sheets 認証
 const auth = new google.auth.GoogleAuth({
   credentials,
   scopes: ['https://www.googleapis.com/auth/spreadsheets'],
 });
 const sheets = google.sheets({ version: 'v4', auth });
 
+// Discord Bot 設定
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -34,71 +35,52 @@ const client = new Client({
   ],
 });
 
-let lastButtonMessage = null;
-
-async function sendButtons(channel, items) {
-  if (lastButtonMessage) {
-    try {
-      await lastButtonMessage.delete();
-    } catch (e) {
-      console.warn("⚠️ ボタン削除に失敗:", e.message);
-    }
-  }
-
-  const rows = [];
-  for (let i = 0; i < items.length; i += 5) {
-    const row = new ActionRowBuilder().addComponents(
-      items.slice(i, i + 5).map(item =>
-        new ButtonBuilder()
-          .setCustomId(`item_${item}`)
-          .setLabel(item)
-          .setStyle(ButtonStyle.Primary)
-      )
-    );
-    rows.push(row);
-  }
-
-  lastButtonMessage = await channel.send({
-    content: '記録する項目を選んでください',
-    components: rows,
-  });
-}
-
+// Bot起動時
 client.once(Events.ClientReady, async () => {
-  console.log("🚀 Bot is ready!");
-
+  console.log(`🚀 Bot is ready!`);
   const channel = await client.channels.fetch(TARGET_CHANNEL_ID);
+  if (!channel) return console.error("❌ チャンネルが見つかりません");
 
   try {
     const res = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
-      range: `${MASTER_SHEET}!A:A`,
+      range: `${MASTER_SHEET}!A2:A`, // A列: 項目名（ヘッダー除く）
     });
-
     const items = res.data.values?.flat().filter(Boolean);
     console.log("✅ Items loaded:", items);
 
-    await sendButtons(channel, items);
+    const rows = [];
+    for (let i = 0; i < items.length; i += 5) {
+      const rowButtons = items.slice(i, i + 5).map(item =>
+        new ButtonBuilder()
+          .setCustomId(`item_${item}`)
+          .setLabel(item)
+          .setStyle(ButtonStyle.Primary)
+      );
+      rows.push(new ActionRowBuilder().addComponents(rowButtons));
+    }
 
-    setInterval(async () => {
-      const res = await sheets.spreadsheets.values.get({
-        spreadsheetId: SPREADSHEET_ID,
-        range: `${MASTER_SHEET}!A:A`,
-      });
-      const items = res.data.values?.flat().filter(Boolean);
-      await sendButtons(channel, items);
-    }, 1000 * 60 * 5);
+    // 古いメッセージ削除＆再表示
+    const messages = await channel.messages.fetch({ limit: 10 });
+    for (const msg of messages.values()) {
+      if (msg.author.id === client.user.id) await msg.delete();
+    }
+
+    await channel.send({
+      content: '記録する項目を選んでください',
+      components: rows,
+    });
   } catch (err) {
     console.error('❌ スプレッドシートの読み込み失敗:', err);
   }
 });
 
+// ボタンが押されたとき
 client.on(Events.InteractionCreate, async interaction => {
   if (!interaction.isButton()) return;
 
   const item = interaction.customId.replace('item_', '');
   const displayName = interaction.member?.nickname || interaction.user.username;
-
   pendingUsers.set(interaction.user.id, { item, name: displayName });
 
   await interaction.reply({
@@ -107,56 +89,62 @@ client.on(Events.InteractionCreate, async interaction => {
   });
 });
 
+// メッセージを受信したとき
 client.on('messageCreate', async (message) => {
   if (message.author.bot) return;
 
-  const now = new Date();
-  const formattedDate = now.toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' });
-  const displayName = message.member?.nickname || message.author.username;
-
-  let item = '';
-  let quantity = '';
-  let memo = '';
-
   const pending = pendingUsers.get(message.author.id);
+  const [amountStr, ...memoParts] = message.content.trim().split(/\s+/);
+  const quantity = parseInt(amountStr);
+  const memo = memoParts.join(' ');
+  const name = message.member?.nickname || message.author.username;
+  const date = new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' });
+
+  const logs = [];
+
   if (pending) {
-    item = pending.item;
-    const args = message.content.trim().split(/\s+/);
-    quantity = args[0] || '';
-    memo = args.slice(1).join(' ') || '';
-  } else {
-    const args = message.content.trim().split(/\s+/);
-    if (args.length < 2) return;
-    item = args[0];
-    quantity = args[1];
-    memo = args.slice(2).join(' ') || '';
-  }
+    // ボタン経由の入力
+    const selected = pending.item;
+    pendingUsers.delete(message.author.id);
 
-  try {
-    const res = await sheets.spreadsheets.values.get({
-      spreadsheetId: SPREADSHEET_ID,
-      range: `${MASTER_SHEET}!A:I`,
-    });
+    try {
+      const res = await sheets.spreadsheets.values.get({
+        spreadsheetId: SPREADSHEET_ID,
+        range: `${MASTER_SHEET}!A2:J`,
+      });
 
-    const rows = res.data.values || [];
-    const matchedRow = rows.find(r => r[0] === item);
+      const rows = res.data.values || [];
+      const row = rows.find(r => r[0] === selected);
+      if (!row) return message.reply('❌ 該当アイテムが見つかりません');
 
-    const logs = [];
+      const createPer = parseInt(row[1]) || 1;
+      const totalAmount = quantity * createPer;
 
-    logs.push([formattedDate, displayName, item, quantity, memo]);
+      logs.push([date, name, selected, totalAmount, memo ? `[${selected}作成用] ${memo}` : `[${selected}作成用]`]);
 
-    if (matchedRow) {
-      for (let i = 1; i < matchedRow.length; i += 2) {
-        const materialName = matchedRow[i];
-        const requiredPerUnit = matchedRow[i + 1];
-
-        if (materialName && requiredPerUnit) {
-          const totalRequired = Number(requiredPerUnit) * Number(quantity);
-          logs.push([formattedDate, displayName, materialName, -totalRequired, `【${item}作成用】`]);
+      for (let i = 0; i < 4; i++) {
+        const mat = row[2 + i * 2];
+        const matQty = parseInt(row[3 + i * 2]);
+        if (mat && matQty) {
+          logs.push([date, name, mat, -matQty * quantity, `[${selected}作成用]`]);
         }
       }
+
+    } catch (err) {
+      console.error("❌ データ取得失敗:", err);
+      return;
     }
 
+  } else {
+    // 手入力記録
+    const item = amountStr;
+    const amount = parseInt(memoParts[0]) || 0;
+    const rawMemo = memoParts.slice(1).join(' ');
+    logs.push([date, name, item, amount, rawMemo]);
+  }
+
+  // ログ書き込み
+  try {
     await sheets.spreadsheets.values.append({
       spreadsheetId: SPREADSHEET_ID,
       range: `${LOG_SHEET}!A:E`,
@@ -165,12 +153,11 @@ client.on('messageCreate', async (message) => {
         values: logs,
       },
     });
+
     await message.react('📦');
   } catch (err) {
-    console.error('❌ 書き込みエラー:', err);
+    console.error("❌ 書き込み失敗:", err);
   }
-
-  pendingUsers.delete(message.author.id);
 });
 
 client.login(process.env.DISCORD_TOKEN);
