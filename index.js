@@ -105,17 +105,18 @@ client.on('messageCreate', async (message) => {
       spreadsheetId: SPREADSHEET_ID,
       range: `${LOG_SHEET}!A:E`,
       valueInputOption: 'USER_ENTERED',
-      insertDataOption: 'INSERT_ROWS',
       requestBody: {
         values: [[formattedDate, pending.name, pending.item, quantity, memo]],
       },
     });
-    console.log('✅ スプレッドシートに記録しました');
+
+    await message.react('✅'); // ← ここでリアクション追加！
     pendingUsers.delete(message.author.id);
   } catch (err) {
-    console.error('❌ スプレッドシートの書き込み失敗:', err);
+    console.error('❌ 書き込みエラー:', err);
   }
 });
+
 
 
 client.login(process.env.DISCORD_TOKEN);
