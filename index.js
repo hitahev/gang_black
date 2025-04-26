@@ -14,9 +14,9 @@ const credentials = require('./credentials.json');
 
 // === 各種設定 ===
 const SPREADSHEET_ID = '1HixtxBa4Zph88RZSY0ffh8XXB0sVlSCuDI8MWnq_6f8';
-const MASTER_SHEET = 'list'; // 必ず半角小文字で
+const MASTER_SHEET = 'list';
 const LOG_SHEET = 'ログ';
-const TARGET_CHANNEL_ID = '1365277821743927296'; // ← 実際のIDに置き換えてね
+const TARGET_CHANNEL_ID = '1365277821743927296';
 const pendingUsers = new Map();
 
 const auth = new google.auth.GoogleAuth({
@@ -25,17 +25,15 @@ const auth = new google.auth.GoogleAuth({
 });
 const sheets = google.sheets({ version: 'v4', auth });
 
-// === Discord Bot ===
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
-    GatewayIntentBits.GuildMembers
+    GatewayIntentBits.GuildMembers,
   ],
 });
 
-// === 起動時にボタン表示 ===
 client.once(Events.ClientReady, async () => {
   console.log(`🚀 Bot is ready!`);
   console.log("📦 Channel ID:", TARGET_CHANNEL_ID);
@@ -50,35 +48,29 @@ client.once(Events.ClientReady, async () => {
       range: `${MASTER_SHEET}!A:A`,
     });
 
-  const items = res.data.values?.flat().filter(Boolean);
-  console.log("✅ Items loaded:", items);
+    const items = res.data.values?.flat().filter(Boolean);
+    console.log("✅ Items loaded:", items);
 
-  // ボタンをすべて作成
-  const buttons = items.map(item =>
-    new ButtonBuilder()
-      .setCustomId(`item_${item}`)
-      .setLabel(item)
-      .setStyle(ButtonStyle.Primary)
-  );
+    const rows = [];
+    for (let i = 0; i < items.length; i += 5) {
+      const rowButtons = items.slice(i, i + 5).map(item =>
+        new ButtonBuilder()
+          .setCustomId(`item_${item}`)
+          .setLabel(item)
+          .setStyle(ButtonStyle.Primary)
+      );
+      rows.push(new ActionRowBuilder().addComponents(rowButtons));
+    }
 
-  // 5個ずつに区切って ActionRow にまとめる
-  const rows = [];
-  for (let i = 0; i < buttons.length; i += 5) {
-    rows.push(new ActionRowBuilder().addComponents(buttons.slice(i, i + 5)));
-  }
-
-// メッセージ送信
-await channel.send({
-  content: '記録する項目を選んでください',
-  components: rows,
-});
-    
+    await channel.send({
+      content: '記録する項目を選んでください',
+      components: rows,
+    });
   } catch (err) {
     console.error('❌ スプレッドシートの読み込み失敗:', err);
   }
 });
 
-// === ボタンが押されたとき ===
 client.on(Events.InteractionCreate, async interaction => {
   if (!interaction.isButton()) return;
 
@@ -93,37 +85,46 @@ client.on(Events.InteractionCreate, async interaction => {
   });
 });
 
-// === ユーザーが数量＋メモを送信したら記録 ===
 client.on('messageCreate', async (message) => {
   if (message.author.bot) return;
 
-  const pending = pendingUsers.get(message.author.id);
-  if (!pending) return;
-
-  const args = message.content.trim().split(/\s+/);
-  const quantity = args[0] || '';
-  const memo = args.slice(1).join(' ') || '';
-
   const now = new Date();
   const formattedDate = now.toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' });
+  const displayName = message.member?.nickname || message.author.username;
+
+  let item = '';
+  let quantity = '';
+  let memo = '';
+
+  const pending = pendingUsers.get(message.author.id);
+  if (pending) {
+    item = pending.item;
+    const args = message.content.trim().split(/\s+/);
+    quantity = args[0] || '';
+    memo = args.slice(1).join(' ') || '';
+  } else {
+    const args = message.content.trim().split(/\s+/);
+    if (args.length < 2) return;
+    item = args[0];
+    quantity = args[1];
+    memo = args.slice(2).join(' ') || '';
+  }
 
   try {
     await sheets.spreadsheets.values.append({
       spreadsheetId: SPREADSHEET_ID,
-      range: `${LOG_SHEET}!A:E`,
+      range: `${LOG_SHEET}!A:D`,
       valueInputOption: 'USER_ENTERED',
       requestBody: {
-        values: [[formattedDate, pending.name, pending.item, quantity, memo]],
+        values: [[formattedDate, displayName, item, quantity, memo]],
       },
     });
-
-    await message.react('✅'); // ← ここでリアクション追加！
-    pendingUsers.delete(message.author.id);
+    await message.react('📦');
   } catch (err) {
     console.error('❌ 書き込みエラー:', err);
   }
+
+  pendingUsers.delete(message.author.id);
 });
-
-
 
 client.login(process.env.DISCORD_TOKEN);
