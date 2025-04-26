@@ -50,22 +50,29 @@ client.once(Events.ClientReady, async () => {
       range: `${MASTER_SHEET}!A:A`,
     });
 
-    const items = res.data.values?.flat().filter(Boolean);
-    console.log("✅ Items loaded:", items);
+  const items = res.data.values?.flat().filter(Boolean);
+  console.log("✅ Items loaded:", items);
 
-    const buttons = items.slice(0, 5).map(item =>
-      new ButtonBuilder()
-        .setCustomId(`item_${item}`)
-        .setLabel(item)
-        .setStyle(ButtonStyle.Primary)
-    );
+  // ボタンをすべて作成
+  const buttons = items.map(item =>
+    new ButtonBuilder()
+      .setCustomId(`item_${item}`)
+      .setLabel(item)
+      .setStyle(ButtonStyle.Primary)
+  );
 
-    const row = new ActionRowBuilder().addComponents(buttons);
+  // 5個ずつに区切って ActionRow にまとめる
+  const rows = [];
+  for (let i = 0; i < buttons.length; i += 5) {
+    rows.push(new ActionRowBuilder().addComponents(buttons.slice(i, i + 5)));
+  }
 
-    await channel.send({
-      content: '記録する項目を選んでください',
-      components: [row],
-    });
+// メッセージ送信
+await channel.send({
+  content: '記録する項目を選んでください',
+  components: rows,
+});
+    
   } catch (err) {
     console.error('❌ スプレッドシートの読み込み失敗:', err);
   }
