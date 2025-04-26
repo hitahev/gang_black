@@ -2,7 +2,7 @@ const fs = require('fs');
 const { Client, GatewayIntentBits, ActionRowBuilder, ButtonBuilder, ButtonStyle, Events } = require('discord.js');
 const { google } = require('googleapis');
 
-// credentials.json を.envから復元
+// === credentials.json を復元 ===
 const credentialsB64 = process.env.GOOGLE_CREDENTIALS_B64;
 if (credentialsB64) {
   const credentialsJson = Buffer.from(credentialsB64, 'base64').toString('utf-8');
@@ -17,14 +17,14 @@ const LOG_SHEET = 'ログ';
 const TARGET_CHANNEL_ID = '1365277821743927296';
 const pendingUsers = new Map();
 
-// Google Sheets 認証
+// === Google Sheets 認証 ===
 const auth = new google.auth.GoogleAuth({
   credentials,
   scopes: ['https://www.googleapis.com/auth/spreadsheets'],
 });
 const sheets = google.sheets({ version: 'v4', auth });
 
-// Discord Bot 設定
+// === Discord Bot 設定 ===
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -34,19 +34,15 @@ const client = new Client({
   ],
 });
 
-// Bot起動時
-client.once(Events.ClientReady, async () => {
-  console.log(`🚀 Bot is ready!`);
-  const channel = await client.channels.fetch(TARGET_CHANNEL_ID);
-  if (!channel) return console.error("❌ チャンネルが見つかりません");
-
+// === ボタン送信関数 ===
+async function postButtons(channel) {
   try {
     const res = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
-      range: `${MASTER_SHEET}!A2:A`, // A列: 項目名（ヘッダー除く）
+      range: `${MASTER_SHEET}!A2:A`,
     });
     const items = res.data.values?.flat().filter(Boolean);
-    console.log("✅ Items loaded:", items);
+    if (!items || items.length === 0) return;
 
     const rows = [];
     for (let i = 0; i < items.length; i += 5) {
@@ -59,25 +55,31 @@ client.once(Events.ClientReady, async () => {
       rows.push(new ActionRowBuilder().addComponents(rowButtons));
     }
 
-    // 古いメッセージ削除＆ボタン再表示
     const messages = await channel.messages.fetch({ limit: 10 });
     for (const msg of messages.values()) {
       if (msg.author.id === client.user.id) await msg.delete();
     }
-
-    // 少し待機してから投稿（安定化）
-    await new Promise(resolve => setTimeout(resolve, 500));
 
     await channel.send({
       content: '記録する項目を選んでください',
       components: rows,
     });
   } catch (err) {
-    console.error('❌ スプレッドシートの読み込み失敗:', err);
+    console.error('❌ ボタン送信失敗:', err);
   }
+}
+
+// === Bot 起動時 ===
+client.once(Events.ClientReady, async () => {
+  console.log(`🚀 Bot is ready!`);
+  const channel = await client.channels.fetch(TARGET_CHANNEL_ID);
+  if (!channel) return console.error("❌ チャンネルが見つかりません");
+
+  await postButtons(channel);
+  setInterval(() => postButtons(channel), 5 * 60 * 1000); // 5分ごとに再送信
 });
 
-// ボタンが押されたとき
+// === ボタンが押されたとき ===
 client.on(Events.InteractionCreate, async interaction => {
   if (!interaction.isButton()) return;
 
@@ -91,21 +93,20 @@ client.on(Events.InteractionCreate, async interaction => {
   });
 });
 
-// メッセージ受信時
+// === メッセージを受信したとき ===
 client.on('messageCreate', async (message) => {
   if (message.author.bot) return;
 
   const pending = pendingUsers.get(message.author.id);
-  const parts = message.content.trim().split(/\s+/);
-  const amountStr = parts[0];
+  const [amountStr, ...memoParts] = message.content.trim().split(/\s+/);
   const quantity = parseInt(amountStr);
-  const memo = parts.slice(1).join(' ');
+  const memo = memoParts.join(' ');
   const name = message.member?.nickname || message.author.username;
   const date = new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' });
+
   const logs = [];
 
-  if (pending && !isNaN(quantity)) {
-    // ボタンからの入力
+  if (pending) {
     const selected = pending.item;
     pendingUsers.delete(message.author.id);
 
@@ -114,39 +115,34 @@ client.on('messageCreate', async (message) => {
         spreadsheetId: SPREADSHEET_ID,
         range: `${MASTER_SHEET}!A2:J`,
       });
+
       const rows = res.data.values || [];
       const row = rows.find(r => r[0] === selected);
       if (!row) return message.reply('❌ 該当アイテムが見つかりません');
 
       const createPer = parseInt(row[1]) || 1;
-      const finalAmount = quantity * createPer;
+      const totalAmount = quantity * createPer;
 
-      // 完成品ログ
-      logs.push([date, name, selected, finalAmount, memo ? `[${selected}作成用] ${memo}` : `[${selected}作成用]`]);
+      logs.push([date, name, selected, totalAmount, memo ? `[${selected}作成用] ${memo}` : `[${selected}作成用]`]);
 
-      // 材料ログ
       for (let i = 0; i < 4; i++) {
-        const material = row[2 + i * 2];
-        const materialQty = parseInt(row[3 + i * 2]);
-        if (material && materialQty) {
-          logs.push([date, name, material, -materialQty * quantity, `[${selected}作成用]`]);
+        const mat = row[2 + i * 2];
+        const matQty = parseInt(row[3 + i * 2]);
+        if (mat && matQty) {
+          logs.push([date, name, mat, -matQty * quantity, `[${selected}作成用]`]);
         }
       }
+
     } catch (err) {
       console.error("❌ データ取得失敗:", err);
       return;
     }
 
   } else {
-    // 手入力形式（例: 選択肢1 3 メモ）
-    const item = parts[0];
-    const qty = parseInt(parts[1]);
-    const rawMemo = parts.slice(2).join(' ');
-    if (!isNaN(qty)) {
-      logs.push([date, name, item, qty, rawMemo]);
-    } else {
-      return; // 無効入力（無視）
-    }
+    const item = amountStr;
+    const amount = parseInt(memoParts[0]) || 0;
+    const rawMemo = memoParts.slice(1).join(' ');
+    logs.push([date, name, item, amount, rawMemo]);
   }
 
   try {
@@ -154,7 +150,9 @@ client.on('messageCreate', async (message) => {
       spreadsheetId: SPREADSHEET_ID,
       range: `${LOG_SHEET}!A:E`,
       valueInputOption: 'USER_ENTERED',
-      requestBody: { values: logs },
+      requestBody: {
+        values: logs,
+      },
     });
 
     await message.react('📦');
