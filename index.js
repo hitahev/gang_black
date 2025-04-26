@@ -101,25 +101,21 @@ client.on('messageCreate', async (message) => {
   const formattedDate = now.toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' });
 
   try {
-    const res = await sheets.spreadsheets.values.get({
+    await sheets.spreadsheets.values.append({
       spreadsheetId: SPREADSHEET_ID,
-      range: `${MASTER_SHEET}!A:A`,
+      range: `${LOG_SHEET}!A:E`,
+      valueInputOption: 'USER_ENTERED',
+      insertDataOption: 'INSERT_ROWS',
+      requestBody: {
+        values: [[formattedDate, pending.name, pending.item, quantity, memo]],
+      },
     });
-    const items = res.data.values?.flat().filter(Boolean);
-    console.log("✅ Items loaded:", items);
+    console.log('✅ スプレッドシートに記録しました');
+    pendingUsers.delete(message.author.id);
   } catch (err) {
-    if (err.response) {
-      console.error('❌ スプレッドシートの読み込み失敗:', {
-        status: err.response.status,
-        statusText: err.response.statusText,
-        message: err.response.data.error.message,
-        reason: err.response.data.error.errors?.[0]?.reason,
-      });
-    } else {
-      console.error('❌ 予期しないエラー:', err);
-    }
+    console.error('❌ スプレッドシートの書き込み失敗:', err);
   }
-
 });
+
 
 client.login(process.env.DISCORD_TOKEN);
