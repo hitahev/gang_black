@@ -1,4 +1,3 @@
-// 必要なモジュール読み込み
 const fs = require('fs');
 const { Client, GatewayIntentBits, ActionRowBuilder, ButtonBuilder, ButtonStyle, Events } = require('discord.js');
 const { google } = require('googleapis');
@@ -60,11 +59,14 @@ client.once(Events.ClientReady, async () => {
       rows.push(new ActionRowBuilder().addComponents(rowButtons));
     }
 
-    // 古いメッセージ削除＆再表示
+    // 古いメッセージ削除＆ボタン再表示
     const messages = await channel.messages.fetch({ limit: 10 });
     for (const msg of messages.values()) {
       if (msg.author.id === client.user.id) await msg.delete();
     }
+
+    // 少し待機してから投稿（安定化）
+    await new Promise(resolve => setTimeout(resolve, 500));
 
     await channel.send({
       content: '記録する項目を選んでください',
@@ -89,21 +91,21 @@ client.on(Events.InteractionCreate, async interaction => {
   });
 });
 
-// メッセージを受信したとき
+// メッセージ受信時
 client.on('messageCreate', async (message) => {
   if (message.author.bot) return;
 
   const pending = pendingUsers.get(message.author.id);
-  const [amountStr, ...memoParts] = message.content.trim().split(/\s+/);
+  const parts = message.content.trim().split(/\s+/);
+  const amountStr = parts[0];
   const quantity = parseInt(amountStr);
-  const memo = memoParts.join(' ');
+  const memo = parts.slice(1).join(' ');
   const name = message.member?.nickname || message.author.username;
   const date = new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' });
-
   const logs = [];
 
-  if (pending) {
-    // ボタン経由の入力
+  if (pending && !isNaN(quantity)) {
+    // ボタンからの入力
     const selected = pending.item;
     pendingUsers.delete(message.author.id);
 
@@ -112,46 +114,47 @@ client.on('messageCreate', async (message) => {
         spreadsheetId: SPREADSHEET_ID,
         range: `${MASTER_SHEET}!A2:J`,
       });
-
       const rows = res.data.values || [];
       const row = rows.find(r => r[0] === selected);
       if (!row) return message.reply('❌ 該当アイテムが見つかりません');
 
       const createPer = parseInt(row[1]) || 1;
-      const totalAmount = quantity * createPer;
+      const finalAmount = quantity * createPer;
 
-      logs.push([date, name, selected, totalAmount, memo ? `[${selected}作成用] ${memo}` : `[${selected}作成用]`]);
+      // 完成品ログ
+      logs.push([date, name, selected, finalAmount, memo ? `[${selected}作成用] ${memo}` : `[${selected}作成用]`]);
 
+      // 材料ログ
       for (let i = 0; i < 4; i++) {
-        const mat = row[2 + i * 2];
-        const matQty = parseInt(row[3 + i * 2]);
-        if (mat && matQty) {
-          logs.push([date, name, mat, -matQty * quantity, `[${selected}作成用]`]);
+        const material = row[2 + i * 2];
+        const materialQty = parseInt(row[3 + i * 2]);
+        if (material && materialQty) {
+          logs.push([date, name, material, -materialQty * quantity, `[${selected}作成用]`]);
         }
       }
-
     } catch (err) {
       console.error("❌ データ取得失敗:", err);
       return;
     }
 
   } else {
-    // 手入力記録
-    const item = amountStr;
-    const amount = parseInt(memoParts[0]) || 0;
-    const rawMemo = memoParts.slice(1).join(' ');
-    logs.push([date, name, item, amount, rawMemo]);
+    // 手入力形式（例: 選択肢1 3 メモ）
+    const item = parts[0];
+    const qty = parseInt(parts[1]);
+    const rawMemo = parts.slice(2).join(' ');
+    if (!isNaN(qty)) {
+      logs.push([date, name, item, qty, rawMemo]);
+    } else {
+      return; // 無効入力（無視）
+    }
   }
 
-  // ログ書き込み
   try {
     await sheets.spreadsheets.values.append({
       spreadsheetId: SPREADSHEET_ID,
       range: `${LOG_SHEET}!A:E`,
       valueInputOption: 'USER_ENTERED',
-      requestBody: {
-        values: logs,
-      },
+      requestBody: { values: logs },
     });
 
     await message.react('📦');
