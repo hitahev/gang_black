@@ -34,13 +34,40 @@ const client = new Client({
   ],
 });
 
+let lastButtonMessage = null;
+
+async function sendButtons(channel, items) {
+  if (lastButtonMessage) {
+    try {
+      await lastButtonMessage.delete();
+    } catch (e) {
+      console.warn("⚠️ ボタン削除に失敗:", e.message);
+    }
+  }
+
+  const rows = [];
+  for (let i = 0; i < items.length; i += 5) {
+    const row = new ActionRowBuilder().addComponents(
+      items.slice(i, i + 5).map(item =>
+        new ButtonBuilder()
+          .setCustomId(`item_${item}`)
+          .setLabel(item)
+          .setStyle(ButtonStyle.Primary)
+      )
+    );
+    rows.push(row);
+  }
+
+  lastButtonMessage = await channel.send({
+    content: '記録する項目を選んでください',
+    components: rows,
+  });
+}
+
 client.once(Events.ClientReady, async () => {
-  console.log(`🚀 Bot is ready!`);
-  console.log("📦 Channel ID:", TARGET_CHANNEL_ID);
-  console.log("📄 Loading items from Google Sheets...");
+  console.log("🚀 Bot is ready!");
 
   const channel = await client.channels.fetch(TARGET_CHANNEL_ID);
-  if (!channel) return console.error("❌ チャンネルが見つかりません");
 
   try {
     const res = await sheets.spreadsheets.values.get({
@@ -51,21 +78,16 @@ client.once(Events.ClientReady, async () => {
     const items = res.data.values?.flat().filter(Boolean);
     console.log("✅ Items loaded:", items);
 
-    const rows = [];
-    for (let i = 0; i < items.length; i += 5) {
-      const rowButtons = items.slice(i, i + 5).map(item =>
-        new ButtonBuilder()
-          .setCustomId(`item_${item}`)
-          .setLabel(item)
-          .setStyle(ButtonStyle.Primary)
-      );
-      rows.push(new ActionRowBuilder().addComponents(rowButtons));
-    }
+    await sendButtons(channel, items);
 
-    await channel.send({
-      content: '記録する項目を選んでください',
-      components: rows,
-    });
+    setInterval(async () => {
+      const res = await sheets.spreadsheets.values.get({
+        spreadsheetId: SPREADSHEET_ID,
+        range: `${MASTER_SHEET}!A:A`,
+      });
+      const items = res.data.values?.flat().filter(Boolean);
+      await sendButtons(channel, items);
+    }, 1000 * 60 * 5);
   } catch (err) {
     console.error('❌ スプレッドシートの読み込み失敗:', err);
   }
@@ -113,7 +135,7 @@ client.on('messageCreate', async (message) => {
   try {
     await sheets.spreadsheets.values.append({
       spreadsheetId: SPREADSHEET_ID,
-      range: `${LOG_SHEET}!A:D`,
+      range: `${LOG_SHEET}!A:E`,
       valueInputOption: 'USER_ENTERED',
       requestBody: {
         values: [[formattedDate, displayName, item, quantity, memo]],
