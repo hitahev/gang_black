@@ -19,10 +19,9 @@ const LOG_SHEET = 'ログ';
 const TARGET_CHANNEL_ID = '1365277821743927296'; // ← 実際のIDに置き換えてね
 const pendingUsers = new Map();
 
-// === Google Sheets 認証 ===
 const auth = new google.auth.GoogleAuth({
   credentials,
-  scopes: ['https://www.googleapis.com/auth/spreadsheets'],
+  scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'], // ←ココ！
 });
 const sheets = google.sheets({ version: 'v4', auth });
 
