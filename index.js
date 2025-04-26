@@ -21,7 +21,7 @@ const pendingUsers = new Map();
 
 const auth = new google.auth.GoogleAuth({
   credentials,
-  scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'], // ←ココ！
+  scopes: ['https://www.googleapis.com/auth/spreadsheets'],
 });
 const sheets = google.sheets({ version: 'v4', auth });
 
