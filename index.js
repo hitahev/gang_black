@@ -96,6 +96,7 @@ client.on(Events.InteractionCreate, async interaction => {
 // === メッセージを受信したとき ===
 client.on('messageCreate', async (message) => {
   if (message.author.bot) return;
+  if (message.channel.id !== TARGET_CHANNEL_ID) return; // ★ここ追加！
 
   const pending = pendingUsers.get(message.author.id);
   const [amountStr, ...memoParts] = message.content.trim().split(/\s+/);
