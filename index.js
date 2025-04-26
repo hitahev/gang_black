@@ -13,8 +13,8 @@ if (credentialsB64) {
 const credentials = require('./credentials.json');
 
 // === 各種設定 ===
-const SPREADSHEET_ID = '1HixtxBa4Zph88RZSY0ffh8XXB0sV1ScuDI8MWnq_6f8';
-const MASTER_SHEET = 'list';
+const SPREADSHEET_ID = '1HixtxBa4Zph88RZSY0ffh8XXB0sVlSCuDI8MWnq_6f8';
+const MASTER_SHEET = 'list'; // 必ず半角小文字で
 const LOG_SHEET = 'ログ';
 const TARGET_CHANNEL_ID = '1365277821743927296'; // ← 実際のIDに置き換えてね
 const pendingUsers = new Map();
