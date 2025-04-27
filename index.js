@@ -62,7 +62,7 @@ async function postButtons(channel) {
     }
 
     await channel.send({
-      content: '記録する項目を選んでください',
+      content: '記録する項目を選ぶのじゃ',
       components: rows,
     });
   } catch (err) {
@@ -89,7 +89,7 @@ client.on(Events.InteractionCreate, async interaction => {
   pendingUsers.set(interaction.user.id, { item, name: displayName });
 
   await interaction.reply({
-    content: `**${item}** を選択しました。\n次に「数量 メモ（任意）」を入力してください。\n例：\`3 重要アイテム\``,
+    content: `**${item}** を選んだのじゃ。\n次に「数量 メモ（任意）」を入力するのじゃ。\n例：\`3 重要アイテム\``,
     ephemeral: true,
   });
 });
