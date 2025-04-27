@@ -1,9 +1,8 @@
-// 必要なモジュール読み込み
 const fs = require('fs');
 const { Client, GatewayIntentBits, ActionRowBuilder, ButtonBuilder, ButtonStyle, Events } = require('discord.js');
 const { google } = require('googleapis');
 
-// === credentials.json を復元 ===
+// credentials.json を復元
 const credentialsB64 = process.env.GOOGLE_CREDENTIALS_B64;
 if (credentialsB64) {
   const credentialsJson = Buffer.from(credentialsB64, 'base64').toString('utf-8');
@@ -11,21 +10,21 @@ if (credentialsB64) {
 }
 const credentials = require('./credentials.json');
 
-// === 各種設定 ===
+// 各種設定
 const SPREADSHEET_ID = '1HixtxBa4Zph88RZSY0ffh8XXB0sVlSCuDI8MWnq_6f8';
 const MASTER_SHEET = 'list';
 const LOG_SHEET = 'ログ';
-const TARGET_CHANNEL_ID = '1365277821743927296';
+const TARGET_CHANNEL_ID = '1365277821743927296'; // 書き込むチャンネルID
 const pendingUsers = new Map();
 
-// === Google Sheets 認証 ===
+// Google Sheets 認証
 const auth = new google.auth.GoogleAuth({
   credentials,
   scopes: ['https://www.googleapis.com/auth/spreadsheets'],
 });
 const sheets = google.sheets({ version: 'v4', auth });
 
-// === Discord Bot 設定 ===
+// Discord Bot 設定
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -35,7 +34,7 @@ const client = new Client({
   ],
 });
 
-// === ボタン送信関数 ===
+// ボタン送信関数
 async function postButtons(channel) {
   try {
     const res = await sheets.spreadsheets.values.get({
@@ -70,19 +69,21 @@ async function postButtons(channel) {
   }
 }
 
-// === Bot 起動時 ===
+// Bot起動時
 client.once(Events.ClientReady, async () => {
   console.log(`🚀 Bot is ready!`);
   const channel = await client.channels.fetch(TARGET_CHANNEL_ID);
   if (!channel) return console.error("❌ チャンネルが見つかりません");
 
   await postButtons(channel);
-  setInterval(() => postButtons(channel), 5 * 60 * 1000);
+  setInterval(() => postButtons(channel), 5 * 60 * 1000); // 5分ごとに再送信
 });
 
-// === ボタンが押されたとき ===
+// ボタンが押されたとき
 client.on(Events.InteractionCreate, async interaction => {
   if (!interaction.isButton()) return;
+
+  if (interaction.channelId !== TARGET_CHANNEL_ID) return; // チャンネルチェック！
 
   const item = interaction.customId.replace('item_', '');
   const displayName = interaction.member?.nickname || interaction.user.username;
@@ -94,9 +95,10 @@ client.on(Events.InteractionCreate, async interaction => {
   });
 });
 
-// === メッセージを受信したとき ===
+// メッセージを受信したとき
 client.on('messageCreate', async (message) => {
   if (message.author.bot) return;
+  if (message.channelId !== TARGET_CHANNEL_ID) return; // チャンネルチェック！
 
   const pending = pendingUsers.get(message.author.id);
   const [amountStr, ...memoParts] = message.content.trim().split(/\s+/);
@@ -157,7 +159,7 @@ client.on('messageCreate', async (message) => {
       },
     });
 
-    await message.react('📦');
+    await message.react('🏯');
   } catch (err) {
     console.error("❌ 書き込み失敗:", err);
   }
