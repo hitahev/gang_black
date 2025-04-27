@@ -1,3 +1,4 @@
+// 必要なモジュール読み込み
 const fs = require('fs');
 const { Client, GatewayIntentBits, ActionRowBuilder, ButtonBuilder, ButtonStyle, Events } = require('discord.js');
 const { google } = require('googleapis');
@@ -76,7 +77,7 @@ client.once(Events.ClientReady, async () => {
   if (!channel) return console.error("❌ チャンネルが見つかりません");
 
   await postButtons(channel);
-  setInterval(() => postButtons(channel), 5 * 60 * 1000); // 5分ごとに再送信
+  setInterval(() => postButtons(channel), 5 * 60 * 1000);
 });
 
 // === ボタンが押されたとき ===
@@ -96,7 +97,6 @@ client.on(Events.InteractionCreate, async interaction => {
 // === メッセージを受信したとき ===
 client.on('messageCreate', async (message) => {
   if (message.author.bot) return;
-  if (message.channel.id !== TARGET_CHANNEL_ID) return; // ★ここ追加！
 
   const pending = pendingUsers.get(message.author.id);
   const [amountStr, ...memoParts] = message.content.trim().split(/\s+/);
@@ -123,14 +123,15 @@ client.on('messageCreate', async (message) => {
 
       const createPer = parseInt(row[1]) || 1;
       const totalAmount = quantity * createPer;
+      const autoMemo = `[${selected}作成用]`;
 
-      logs.push([date, name, selected, totalAmount, memo ? `[${selected}作成用] ${memo}` : `[${selected}作成用]`]);
+      logs.push([date, name, selected, totalAmount, memo, autoMemo]);
 
       for (let i = 0; i < 4; i++) {
         const mat = row[2 + i * 2];
         const matQty = parseInt(row[3 + i * 2]);
         if (mat && matQty) {
-          logs.push([date, name, mat, -matQty * quantity, `[${selected}作成用]`]);
+          logs.push([date, name, mat, -matQty * quantity, '', autoMemo]);
         }
       }
 
@@ -143,13 +144,13 @@ client.on('messageCreate', async (message) => {
     const item = amountStr;
     const amount = parseInt(memoParts[0]) || 0;
     const rawMemo = memoParts.slice(1).join(' ');
-    logs.push([date, name, item, amount, rawMemo]);
+    logs.push([date, name, item, amount, rawMemo, '']);
   }
 
   try {
     await sheets.spreadsheets.values.append({
       spreadsheetId: SPREADSHEET_ID,
-      range: `${LOG_SHEET}!A:E`,
+      range: `${LOG_SHEET}!A:F`,
       valueInputOption: 'USER_ENTERED',
       requestBody: {
         values: logs,
